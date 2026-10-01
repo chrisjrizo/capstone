@@ -44,6 +44,30 @@ except Exception as e:
     print("Could not load OpenAI API key openai_api_key.txt.")
 
 
+
+try:
+    from google import genai
+    from google.genai import types
+
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+
+    if not gemini_api_key:
+        try:
+            from google.colab import userdata
+            gemini_api_key = userdata.get("GEMINI_API_KEY")
+        except Exception:
+            pass
+
+    if not gemini_api_key:
+        raise ValueError("GEMINI_API_KEY not found")
+
+    gemini_client = genai.Client(api_key=gemini_api_key)
+
+except Exception as e:
+    print(e)
+    print("Could not load Gemini API key.")
+
+
 def log_to_file(log_file, prompt, completion, model, max_tokens_to_sample):
     """ Log the prompt and completion to a file."""
     with open(log_file, "a") as f:
@@ -172,19 +196,80 @@ def complete_text_openai(prompt, stop_sequences=[], model="gpt-3.5-turbo", max_t
         log_to_file(log_file, prompt, completion, model, max_tokens_to_sample)
     return completion
 
+
+def complete_text_gemini(
+    prompt,
+    model="gemini-3.5-flash-lite",
+    max_tokens_to_sample=2000,
+    temperature=0.5,
+    log_file=None,
+    **kwargs
+):
+    """Call the Gemini API."""
+
+    response = gemini_client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens_to_sample
+        )
+    )
+
+    completion = response.text or ""
+
+    if log_file is not None:
+        log_to_file(
+            log_file,
+            prompt,
+            completion,
+            model,
+            max_tokens_to_sample
+        )
+
+    return completion
+
+
 def complete_text(prompt, log_file, model, **kwargs):
-    """ Complete text using the specified model with appropriate API. """
+    """Complete text using the specified model with appropriate API."""
 
     if model.startswith("claude"):
-        # use anthropic API
-        completion = complete_text_claude(prompt, stop_sequences=[HUMAN_PROMPT, "Observation:"], log_file=log_file, model=model, **kwargs)
+        completion = complete_text_claude(
+            prompt,
+            stop_sequences=[HUMAN_PROMPT, "Observation:"],
+            log_file=log_file,
+            model=model,
+            **kwargs
+        )
+
+    elif model.startswith("gemini"):
+        completion = complete_text_gemini(
+            prompt,
+            log_file=log_file,
+            model=model,
+            **kwargs
+        )
+
     elif "/" in model:
-        # use CRFM API since this specifies organization like "openai/..."
-        completion = complete_text_crfm(prompt, stop_sequences=["Observation:"], log_file=log_file, model=model, **kwargs)
+        completion = complete_text_crfm(
+            prompt,
+            stop_sequences=["Observation:"],
+            log_file=log_file,
+            model=model,
+            **kwargs
+        )
+
     else:
-        # use OpenAI API
-        completion = complete_text_openai(prompt, stop_sequences=["Observation:"], log_file=log_file, model=model, **kwargs)
+        completion = complete_text_openai(
+            prompt,
+            stop_sequences=["Observation:"],
+            log_file=log_file,
+            model=model,
+            **kwargs
+        )
+
     return completion
+
 
 # specify fast models for summarization etc
 FAST_MODEL = "claude-v1"
