@@ -672,7 +672,8 @@ def agent_loop(current_history, steps, use_gpt4, log_dir, args):
         os.makedirs(log_dir)
 
     with open(os.path.join(log_dir, "main_log") , "w", 1) as f:
-        f.write("Enabled Tools:" + str(tool_names) + "\n") 
+        f.write("Enabled Tools:" + str(tool_names) + "\n")
+        f.write("Feedback Mode:" + args.feedback_mode + "\n") 
         tools_prompt, tools = construct_tools_prompt(tool_names)
         f.write("================================Start=============================\n")
         last_steps = 3
@@ -762,51 +763,116 @@ def agent_loop(current_history, steps, use_gpt4, log_dir, args):
                 #          + ground_truth.loc[hits].to_string()
 
             else:
-                if len(gene_readout) < 1500:
-                    ## Append experiment results to the current prompt
-                    prompt += "\n This is not your first round. All tested genes and " \
-                            "their measured log fold change are: \n"\
-                            + gene_readout.drop(hits).to_string()
+                if args.feedback_mode == "full":
+                    # Original BioDiscoveryAgent feedback:
+                    # all non-hit scores + hit identities and scores.
+                    if len(gene_readout) < 1500:
+                        prompt += "\n This is not your first round. All tested genes and " \
+                                "their measured log fold change are: \n" \
+                                + gene_readout.drop(hits).to_string()
 
-                    prompt +=  "\n You have successfully identified {} hits so " \
+                        prompt += "\n You have successfully identified {} hits so " \
+                                  "far over all experiment cycles! The results for the " \
+                                  "hits are: \n".format(len(hits)) + \
+                                  ground_truth.loc[hits].to_string()
+
+                        if args.lit_review:
+                            lit_review_prompt += "\n You have successfully identified {} hits so " \
                                 "far over all experiment cycles! The results for the " \
                                 "hits are: \n".format(len(hits)) + \
                                 ground_truth.loc[hits].to_string()
-                                
+
+                        hits_history.append(len(hits))
+
+                    else:
+                        # Long-history summarization
+                        non_hit_sum_prompt = research_problem + \
+                            "\n Till now, these are all tested genes that are not hits along with their scores: \n" + \
+                            gene_readout.drop(hits).to_string()
+                        non_hit_sum_prompt += \
+                            "\n Summarize this in a few lines to find some common pattern in these which will aid in the next steps of experimental design to maximize your cumulative hits."
+
+                        sum_log_file = os.path.join(
+                            log_dir, f"step_{curr_step}_log_neg_sum.log"
+                        )
+                        negative_examples_summary = complete_text(
+                            non_hit_sum_prompt,
+                            model=args.model,
+                            log_file=sum_log_file
+                        )
+
+                        hit_sum_prompt = research_problem + \
+                            "\n Till now, you have identified the following genes as hits along with their scores: \n" + \
+                            ground_truth.loc[hits].to_string()
+                        hit_sum_prompt += \
+                            "\n Summarize this in a few lines to find some common pattern in these which will aid in the next steps of experimental design to maximize your cumulative hits."
+
+                        sum_log_file = os.path.join(
+                            log_dir, f"step_{curr_step}_log_pos_sum.log"
+                        )
+                        positive_examples_summary = complete_text(
+                            hit_sum_prompt,
+                            model=args.model,
+                            log_file=sum_log_file
+                        )
+
+                        prompt += "\n This is not your first round. The summary of all tested genes and " \
+                                  "their measured log fold change are: \n" + \
+                                  negative_examples_summary
+
+                        prompt += "\n The summary of these hits is the following: " + \
+                                  positive_examples_summary
+
+                        prompt += "\n Keep this in mind while choosing genes to be perturbed for the next round as they should also have similar properties."
+
+                        prompt += "\n Till now, the progression of the number of cumulative hits is as follows: " + \
+                                  ", ".join(map(str, hits_history))
+
+                        prompt += "\n If you see the number of hits not increasing a lot over the past few rounds, rethink your design strategy to try to maximize these. One possibility could be that you are exploiting only one mode in the distribution and you might want to try some very different types of genes in order to find some different interesting possible pathways."
+
+                        prompt += "\n You have successfully identified {} hits so " \
+                                  "far over all experiment cycles! You will not be shown the results until " \
+                                  "the end of all the rounds, so design your strategy accordingly. \n".format(len(hits))
+
+                        hits_history.append(len(hits))
+
+
+                elif args.feedback_mode == "hits_only":
+                    # Keep anti-repeat information constant, but reveal outcomes
+                    # only for genes classified as hits.
+                    prompt += "\n This is not your first round. Previously tested genes " \
+                              "(do not select again): \n" + str(gene_sampled)
+
+                    prompt += "\n You have successfully identified {} hits so " \
+                              "far over all experiment cycles! The results for the " \
+                              "hits are: \n".format(len(hits)) + \
+                              ground_truth.loc[hits].to_string()
+
                     if args.lit_review:
-                        lit_review_prompt +=  "\n You have successfully identified {} hits so " \
+                        lit_review_prompt += "\n You have successfully identified {} hits so " \
                             "far over all experiment cycles! The results for the " \
                             "hits are: \n".format(len(hits)) + \
                             ground_truth.loc[hits].to_string()
 
                     hits_history.append(len(hits))
-                else:
-                    # summarize the results
-                    non_hit_sum_prompt = research_problem + "\n Till now, these are all tested genes that are not hits along with their scores: \n" + gene_readout.drop(hits).to_string()
-                    non_hit_sum_prompt += "\n Summarize this in a few lines to find some common pattern in these which will aid in the next steps of experimental design to maximize your cumulative hits."
-                    sum_log_file = os.path.join(log_dir , f"step_{curr_step}_log_neg_sum.log")
-                    negative_examples_summary = complete_text(non_hit_sum_prompt, model=args.model, log_file=sum_log_file)
 
-                    
-                    hit_sum_prompt = research_problem + "\n Till now, you have identified the following genes as hits along with their scores: \n" + ground_truth.loc[hits].to_string()
-                    hit_sum_prompt += "\n Summarize this in a few lines to find some common pattern in these which will aid in the next steps of experimental design to maximize your cumulative hits."
-                    sum_log_file = os.path.join(log_dir , f"step_{curr_step}_log_pos_sum.log")
-                    positive_examples_summary = complete_text(hit_sum_prompt, model=args.model, log_file=sum_log_file)
 
-                    prompt += "\n This is not your first round. The summary of all tested genes and " \
-                            "their measured log fold change are: \n" + negative_examples_summary
-                    prompt += "\n The summary of these hits is the following: " + positive_examples_summary
-                    prompt += "\n Keep this in mind while choosing genes to be perturbed for the next round as they should also have similar properties."
+                elif args.feedback_mode == "none":
+                    # Tell the agent which genes were already tested so duplicate
+                    # handling is equivalent, but provide NO scores, hit labels,
+                    # hit counts, or experimental outcomes.
+                    prompt += "\n This is not your first round. Previously tested genes " \
+                              "(do not select again): \n" + str(gene_sampled)
 
-                    prompt += "\n Till now, the progression of the number of cumulative hits is as follows: " + ", ".join(map(str, hits_history))
-                    prompt += "\n If you see the number of hits not increasing a lot over the past few rounds, rethink your design strategy to try to maximize these. One possibility could be that you are exploiting only one mode in the distribution and you might want to try some very different types of genes in order to find some different interesting possible pathways." 
-                    prompt +=  "\n You have successfully identified {} hits so " \
-                                "far over all experiment cycles! You will not be shown the results until " \
-                                "the end of all the rounds, so design your strategy accordingly. \n".format(len(hits))
                     hits_history.append(len(hits))
 
-                prompt += current_history["instructions"]
 
+                else:
+                    raise ValueError(
+                        f"Unknown feedback mode: {args.feedback_mode}"
+                    )
+
+                prompt += current_history["instructions"]
 
 
             # prompting
