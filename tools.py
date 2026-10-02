@@ -533,7 +533,7 @@ def print_action(entries):
     return "".join([ k + ": " + v for k,v in  entries.items()])
 
 
-def summarize_remaining_genes(all_genes, summary_size=20, bs=1000):
+def summarize_remaining_genes(all_genes, model, summary_size=20, bs=1000):
 
     blocks = [all_genes[i:i + bs] for i in range(0, len(all_genes), bs)]
     abridged_list = []
@@ -556,7 +556,7 @@ def summarize_remaining_genes(all_genes, summary_size=20, bs=1000):
                 not include any gene that is guessed rather than 
                 directly present in the list.
                 """
-        completion = complete_text(prompt, model="claude-1", log_file=None)
+        completion = complete_text(prompt, model=model, log_file=None)
         abridged_list.append(completion)
 
     abridged_list = ','.join(abridged_list)
@@ -935,7 +935,7 @@ def agent_loop(current_history, steps, use_gpt4, log_dir, args):
                             # Start choosing from gene list instead of random sample
                             num_genes_pick = args.num_genes - len(curr_sample)
                             genes_remain = list(set(measured_genes).difference(set(gene_sampled)))
-                            genes_remain_summary = summarize_remaining_genes(genes_remain)
+                            genes_remain_summary = summarize_remaining_genes(genes_remain, args.model)
                         else:
                             genes_remain_summary = list(set(
                                 genes_remain_summary).difference(set(curr_sample)))
@@ -1030,7 +1030,7 @@ Please do not critique/make changes if there is no need to make a change.
                             # Start choosing from gene list instead of random sample
                             num_genes_pick = args.num_genes - len(curr_sample)
                             genes_remain = list(set(measured_genes).difference(set(gene_sampled)))
-                            genes_remain_summary = summarize_remaining_genes(genes_remain)
+                            genes_remain_summary = summarize_remaining_genes(genes_remain, args.model)
                         else:
                             genes_remain_summary = list(set(
                                 genes_remain_summary).difference(set(curr_sample)))

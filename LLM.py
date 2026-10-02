@@ -205,29 +205,57 @@ def complete_text_gemini(
     log_file=None,
     **kwargs
 ):
-    """Call the Gemini API."""
+    """Call the Gemini API with retry/backoff for temporary API failures."""
 
-    response = gemini_client.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens_to_sample
-        )
-    )
+    import time
 
-    completion = response.text or ""
+    max_retries = 6
 
-    if log_file is not None:
-        log_to_file(
-            log_file,
-            prompt,
-            completion,
-            model,
-            max_tokens_to_sample
-        )
+    for attempt in range(max_retries):
+        try:
+            response = gemini_client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_tokens_to_sample
+                )
+            )
 
-    return completion
+            completion = response.text or ""
+
+            if log_file is not None:
+                log_to_file(
+                    log_file,
+                    prompt,
+                    completion,
+                    model,
+                    max_tokens_to_sample
+                )
+
+            return completion
+
+        except Exception as e:
+            error_text = str(e)
+
+            retryable = (
+                "503" in error_text
+                or "UNAVAILABLE" in error_text
+                or "429" in error_text
+                or "RESOURCE_EXHAUSTED" in error_text
+            )
+
+            if retryable and attempt < max_retries - 1:
+                wait_time = min(5 * (2 ** attempt), 60)
+                print(
+                    f"Gemini temporarily unavailable. "
+                    f"Retrying in {wait_time}s "
+                    f"(attempt {attempt + 1}/{max_retries})..."
+                )
+                time.sleep(wait_time)
+                continue
+
+            raise
 
 
 def complete_text(prompt, log_file, model, **kwargs):
