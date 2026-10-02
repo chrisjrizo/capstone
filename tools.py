@@ -533,7 +533,7 @@ def print_action(entries):
     return "".join([ k + ": " + v for k,v in  entries.items()])
 
 
-def summarize_remaining_genes(all_genes, model, summary_size=20, bs=1000):
+def summarize_remaining_genes(all_genes, model, log_file=None, summary_size=20, bs=1000):
 
     blocks = [all_genes[i:i + bs] for i in range(0, len(all_genes), bs)]
     abridged_list = []
@@ -556,7 +556,7 @@ def summarize_remaining_genes(all_genes, model, summary_size=20, bs=1000):
                 not include any gene that is guessed rather than 
                 directly present in the list.
                 """
-        completion = complete_text(prompt, model=model, log_file=None)
+        completion = complete_text(prompt, model=model, log_file=log_file)
         abridged_list.append(completion)
 
     abridged_list = ','.join(abridged_list)
@@ -785,13 +785,13 @@ def agent_loop(current_history, steps, use_gpt4, log_dir, args):
                     non_hit_sum_prompt = research_problem + "\n Till now, these are all tested genes that are not hits along with their scores: \n" + gene_readout.drop(hits).to_string()
                     non_hit_sum_prompt += "\n Summarize this in a few lines to find some common pattern in these which will aid in the next steps of experimental design to maximize your cumulative hits."
                     sum_log_file = os.path.join(log_dir , f"step_{curr_step}_log_neg_sum.log")
-                    negative_examples_summary = complete_text(non_hit_sum_prompt, model = "claude-1", log_file = sum_log_file)
+                    negative_examples_summary = complete_text(non_hit_sum_prompt, model=args.model, log_file=sum_log_file)
 
                     
                     hit_sum_prompt = research_problem + "\n Till now, you have identified the following genes as hits along with their scores: \n" + ground_truth.loc[hits].to_string()
                     hit_sum_prompt += "\n Summarize this in a few lines to find some common pattern in these which will aid in the next steps of experimental design to maximize your cumulative hits."
                     sum_log_file = os.path.join(log_dir , f"step_{curr_step}_log_pos_sum.log")
-                    positive_examples_summary = complete_text(hit_sum_prompt, model = "claude-1", log_file = sum_log_file)
+                    positive_examples_summary = complete_text(hit_sum_prompt, model=args.model, log_file=sum_log_file)
 
                     prompt += "\n This is not your first round. The summary of all tested genes and " \
                             "their measured log fold change are: \n" + negative_examples_summary
@@ -935,7 +935,7 @@ def agent_loop(current_history, steps, use_gpt4, log_dir, args):
                             # Start choosing from gene list instead of random sample
                             num_genes_pick = args.num_genes - len(curr_sample)
                             genes_remain = list(set(measured_genes).difference(set(gene_sampled)))
-                            genes_remain_summary = summarize_remaining_genes(genes_remain, args.model)
+                            genes_remain_summary = summarize_remaining_genes(genes_remain, args.model, log_file=os.path.join(log_dir, f"step_{curr_step}_fallback_summary.log"))
                         else:
                             genes_remain_summary = list(set(
                                 genes_remain_summary).difference(set(curr_sample)))
@@ -1030,7 +1030,7 @@ Please do not critique/make changes if there is no need to make a change.
                             # Start choosing from gene list instead of random sample
                             num_genes_pick = args.num_genes - len(curr_sample)
                             genes_remain = list(set(measured_genes).difference(set(gene_sampled)))
-                            genes_remain_summary = summarize_remaining_genes(genes_remain, args.model)
+                            genes_remain_summary = summarize_remaining_genes(genes_remain, args.model, log_file=os.path.join(log_dir, f"step_{curr_step}_fallback_summary.log"))
                         else:
                             genes_remain_summary = list(set(
                                 genes_remain_summary).difference(set(curr_sample)))
